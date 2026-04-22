@@ -1,13 +1,25 @@
-import tensorflow as tf
 import numpy as np
 from PIL import Image
 
-IMG_SIZE = 224
-
 import tf_keras as keras
+import tensorflow as tf
 
-# On utilise explicitement tf_keras pour charger le modèle
+# Correctif pour les arguments obsolètes de InputLayer
+from tf_keras.src.layers import InputLayer
+original_init = InputLayer.__init__
+
+def patched_init(self, *args, **kwargs):
+    # On retire les arguments que le serveur ne comprend pas
+    kwargs.pop('batch_shape', None)
+    kwargs.pop('optional', None)
+    return original_init(self, *args, **kwargs)
+
+InputLayer.__init__ = patched_init
+
+# Maintenant on tente le chargement
 model_cnn = keras.models.load_model("models_saved/modele_tsa_cnn.h5", compile=False)
+
+IMG_SIZE = 224
 
 def preprocess_image(image: Image.Image):
     image = image.resize((IMG_SIZE, IMG_SIZE))
