@@ -4,7 +4,11 @@ WORKDIR /app
 
 COPY . .
 
-RUN apt-get update && apt-get install -y build-essential
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    tesseract-ocr \
+    poppler-utils \
+    build-essential
 
 RUN pip install --upgrade pip setuptools wheel
 
