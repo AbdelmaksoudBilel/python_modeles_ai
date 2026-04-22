@@ -1,19 +1,30 @@
-name: Sync to Hugging Face Hub
+name: Deploy to Hugging Face Space
 
 on:
   push:
     branches: [main]
 
 jobs:
-  sync:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Push to Hugging Face
-        uses: nateraw/huggingface-sync-action@v0.0.5
-        with:
-          repo_id: "Badjou2002/python_ai_api"
-          token: ${{ secrets.HF_TOKEN }}
+      - name: Install HuggingFace Hub
+        run: pip install huggingface_hub
+
+      - name: Push to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -c "
+from huggingface_hub import HfApi
+api = HfApi(token='$HF_TOKEN')
+api.upload_folder(
+    repo_id='Badjou2002/python_ai_api',
+    folder_path='.',
+    repo_type='space'
+)
+"
