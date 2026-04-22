@@ -1,0 +1,19 @@
+name: Sync to Hugging Face Hub
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Push to Hugging Face
+        uses: nateraw/huggingface-sync-action@v0.0.5
+        with:
+          repo_id: Badjou2002/python_ai_api
+          token: ${{ secrets.HF_TOKEN }}
