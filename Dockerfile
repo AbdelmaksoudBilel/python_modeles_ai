@@ -18,7 +18,7 @@ ENV PATH="/home/user/.local/bin:$PATH"
 WORKDIR /app
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Étape critique : Installation isolée des frameworks ET du patch de compatibilité Keras
-RUN pip install --no-cache-dir torch==2.3.0 tensorflow==2.16.1 tf-keras xgboost
+RUN pip install --no-cache-dir torch==2.3.0 tensorflow==2.16.1 tf-keras xgboost httpx==0.27.2
 
 # Installation du reste
 COPY --chown=user requirements.txt .
