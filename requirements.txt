@@ -49,8 +49,7 @@ torch==2.3.0
 transformers==4.41.2
 Pillow==10.3.0
 
-# Audio / vidéo / multimodal
-openai-whisper==20231117
+# vidéo / multimodal
 opencv-python-headless==4.10.0.82
 google-genai==0.7.0
 

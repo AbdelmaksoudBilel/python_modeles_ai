@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 from ..multimodal.language_handler import LanguageHandler
 from ..multimodal.image_handler    import ImageHandler
 from ..multimodal.video_handler    import VideoHandler
-from ..multimodal.speech_handler   import SpeechHandler
 from ..rag.rag_query_builder import RAGQueryBuilder   # ← NOUVEAU
 from ..rag.chunk_filter      import ChunkFilter
 from ..rag.memory_manager    import MemoryManager
@@ -141,7 +140,8 @@ class MainPipeline:
         # Multimodal
         self.image_handler  = ImageHandler(llm_client=None)
         self.video_handler  = VideoHandler()
-        self.speech_handler = SpeechHandler()
+        # SpeechHandler removed — leave None as fallback
+        self.speech_handler = None
 
         # RAG
         self.chunk_filter = ChunkFilter(CHUNKS_FILE, FAISS_FILE, META_FILE)
@@ -335,8 +335,13 @@ class MainPipeline:
                 r = self.video_handler.process(media_path)
                 return r.get("translated_text", ""), r.get("translated_text", "")
             elif media_type == "audio":
-                r = self.speech_handler.process(media_path)
-                return r.get("translated_text", ""), ""
+                # SpeechHandler removed: skip audio processing if not available
+                if self.speech_handler:
+                    r = self.speech_handler.process(media_path)
+                    return r.get("translated_text", ""), ""
+                else:
+                    logger.info("Audio processing disabled (SpeechHandler supprimé)")
+                    return "", ""
         except Exception as e:
             logger.warning(f"Erreur traitement média : {e}")
         return "", ""

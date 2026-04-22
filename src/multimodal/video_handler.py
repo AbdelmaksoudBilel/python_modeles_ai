@@ -21,12 +21,7 @@ except ImportError:
     CV2_OK = False
     logger.warning("opencv non installé → pip install opencv-python")
 
-# ── Whisper (optionnel — nécessite ffmpeg système) ────────────────────────────
-try:
-    import whisper as whisper_lib
-    WHISPER_OK = True
-except ImportError:
-    WHISPER_OK = False
+# Note: Whisper removed — audio transcription is disabled (video-only analysis)
 
 # ── BLIP-2 (fallback local) ───────────────────────────────────────────────────
 try:
@@ -243,7 +238,7 @@ Sois précis et objectif. Réponds en {language}.
             "success"         : True,
         }
 
-    # [3] BLIP-2 + WHISPER (fallback CPU)
+    # [3] BLIP-2 (fallback CPU)
 
     def _blip2_describe(self, video_path: str, language: str) -> dict:
         """
@@ -416,47 +411,10 @@ Sois précis et objectif. Réponds en {language}.
 
     def _extract_audio_safe(self, video_path: str) -> str:
         """
-        Tente d'extraire l'audio SANS ffmpeg système.
-        Retourne "" si ffmpeg absent (ne plante pas).
+        Audio intentionally ignored — video is processed without audio.
+        This function always returns an empty string.
         """
-        if not WHISPER_OK:
-            return ""
-
-        try:
-            import subprocess
-            # Vérifier si ffmpeg est disponible
-            result = subprocess.run(
-                ["ffmpeg", "-version"],
-                capture_output=True, timeout=5
-            )
-            if result.returncode != 0:
-                logger.info("ffmpeg non disponible — audio ignoré")
-                return ""
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            logger.info("ffmpeg non trouvé — audio ignoré (vidéo analysée sans son)")
-            return ""
-
-        # ffmpeg disponible → extraire audio
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp_path = tmp.name
-
-            import subprocess
-            subprocess.run([
-                "ffmpeg", "-y", "-i", video_path,
-                "-vn", "-acodec", "pcm_s16le",
-                "-ar", "16000", "-ac", "1", tmp_path,
-            ], capture_output=True, timeout=30)
-
-            model  = whisper_lib.load_model("tiny")
-            result = model.transcribe(tmp_path, language=None)
-            text   = result.get("text", "").strip()
-            Path(tmp_path).unlink(missing_ok=True)
-            return text
-
-        except Exception as e:
-            logger.warning(f"Extraction audio échouée : {e}")
-            return ""
+        return ""
 
     def _error(self, message: str) -> dict:
         logger.error(message)
