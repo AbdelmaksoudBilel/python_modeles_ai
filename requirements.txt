@@ -23,7 +23,9 @@ https://github.com/explosion/spacy-models/releases/download/fr_core_news_sm-3.7.
 # Machine Learning & Vision
 scikit-learn
 joblib
-transformers
+tensorflow==2.16.1
+tf-keras
+torch==2.3.0
 Pillow
 opencv-python-headless
 google-genai
