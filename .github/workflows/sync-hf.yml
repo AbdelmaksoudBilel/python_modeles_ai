@@ -15,5 +15,5 @@ jobs:
       - name: Push to Hugging Face
         uses: nateraw/huggingface-sync-action@v0.0.5
         with:
-          repo_id: Badjou2002/python_ai_api
+          repo_id: "Badjou2002/python_ai_api"
           token: ${{ secrets.HF_TOKEN }}
