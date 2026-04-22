@@ -12,19 +12,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install HuggingFace Hub
+      - name: Install dependencies
         run: pip install huggingface_hub
 
       - name: Push to HF Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          python -c "
-from huggingface_hub import HfApi
-api = HfApi(token='$HF_TOKEN')
-api.upload_folder(
-    repo_id='Badjou2002/python_ai_api',
-    folder_path='.',
-    repo_type='space'
-)
-"
+          python deploy.py

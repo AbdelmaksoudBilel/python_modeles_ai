@@ -65,3 +65,5 @@ tqdm==4.66.4
 # - J'ai retiré les paquets qui n'apparaissent pas dans les fichiers Python (requests, beautifulsoup4,
 #   xgboost, matplotlib, seaborn, pypdf, pdf2image, etc.). Si vous utilisez ces outils manuellement
 #   (scripts Jupyter, notebooks, ou tâches externes), rajoutez-les manuellement.
+
+huggingface_hub
