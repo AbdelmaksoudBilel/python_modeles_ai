@@ -34,7 +34,7 @@ ddgs==9.14.1
 duckduckgo-search==6.3.7
 
 # NLP
-lingua-language-detector==2.2.0
+lingua-language-detector==2.1.1
 deep-translator==1.11.4
 spacy==3.7.2
 
