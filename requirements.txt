@@ -1,0 +1,67 @@
+﻿# =============================================================================
+# requirements.txt — Projet Ma Chance · Assistant Intelligent TSA & RM
+# Python 3.10 / 3.11 / 3.12 recommandé
+# =============================================================================
+# Installation : pip install -r requirements.txt
+#
+# Dépendances système requises (non-pip) :
+#   sudo apt install ffmpeg                                  # Whisper audio
+#   sudo apt install tesseract-ocr tesseract-ocr-fra        # OCR PDF
+#   sudo apt install poppler-utils                          # pdf2image
+#   python -m spacy download fr_core_news_sm                # Modèle NLP français
+# =============================================================================
+
+
+# Minimal requirements (paquets réellement importés dans le code)
+# Conserver uniquement les dépendances utilisées directement dans le projet.
+
+# API & Serveur
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.1
+python-dotenv==1.0.1
+
+# LLM
+groq==0.9.0
+
+# RAG / Vector search
+faiss-cpu==1.12.0
+sentence-transformers==3.0.1
+rank-bm25==0.2.2
+
+# Recherche web
+ddgs==9.14.1
+duckduckgo-search==6.3.7
+
+# NLP
+lingua-language-detector==2.2.0
+deep-translator==1.11.4
+spacy==3.7.2
+
+# Machine Learning classique
+scikit-learn==1.5.0
+joblib==1.4.2
+
+# Deep Learning / Multimodal
+numpy==1.26.4
+tensorflow==2.16.1
+torch==2.3.0
+transformers==4.41.2
+Pillow==10.3.0
+
+# Audio / vidéo / multimodal
+openai-whisper==20231117
+opencv-python-headless==4.10.0.82
+google-genai==0.7.0
+
+# OCR
+pytesseract==0.3.10
+
+# Data
+pandas==2.2.2
+tqdm==4.66.4
+
+# Notes:
+# - J'ai retiré les paquets qui n'apparaissent pas dans les fichiers Python (requests, beautifulsoup4,
+#   xgboost, matplotlib, seaborn, pypdf, pdf2image, etc.). Si vous utilisez ces outils manuellement
+#   (scripts Jupyter, notebooks, ou tâches externes), rajoutez-les manuellement.
