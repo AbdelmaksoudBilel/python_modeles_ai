@@ -4,7 +4,10 @@ from PIL import Image
 
 IMG_SIZE = 224
 
-model_cnn = tf.keras.models.load_model("models_saved/modele_tsa_cnn.h5")
+import tf_keras as keras
+
+# On utilise explicitement tf_keras pour charger le modèle
+model_cnn = keras.models.load_model("models_saved/modele_tsa_cnn.h5", compile=False)
 
 def preprocess_image(image: Image.Image):
     image = image.resize((IMG_SIZE, IMG_SIZE))
