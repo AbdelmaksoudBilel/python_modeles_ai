@@ -23,14 +23,12 @@ except ImportError:
 
 # Note: Whisper removed — audio transcription is disabled (video-only analysis)
 
-# ── BLIP-2 (fallback local) ───────────────────────────────────────────────────
+# ── LLM client (Groq) pour fallback léger vision → texte
 try:
-    from transformers import Blip2Processor, Blip2ForConditionalGeneration
-    import torch
-    from PIL import Image
-    BLIP2_OK = True
-except ImportError:
-    BLIP2_OK = False
+    from ..llm.llm_client import LLMClient
+    LLMCLIENT_OK = True
+except Exception:
+    LLMCLIENT_OK = False
 
 
 # VIDEO HANDLER
@@ -90,22 +88,17 @@ class VideoHandler:
                 result["duration_sec"] = duration
                 return result
             except Exception as e:
-                logger.warning(f"Gemini échoué : {e} → essai Qwen2-VL")
+                logger.warning(f"Gemini échoué : {e} → fallback Groq vision")
 
-        # ── [2] Qwen2-VL local ───────────────────────────────────────────────
+        # ── [2] Light vision fallback (Groq) — avoids large local VLMs
         try:
-            logger.info("Tentative Qwen2-VL local...")
-            result = self._qwen_describe(str(path), language)
+            logger.info("Tentative fallback Groq Vision...")
+            result = self._groq_vision_fallback(str(path), language)
             result["duration_sec"] = duration
             return result
         except Exception as e:
-            logger.warning(f"Qwen2-VL échoué : {e} → fallback BLIP-2")
-
-        # ── [3] BLIP-2 fallback ──────────────────────────────────────────────
-        logger.info("Fallback : BLIP-2 frames")
-        result = self._blip2_describe(str(path), language)
-        result["duration_sec"] = duration
-        return result
+            logger.warning(f"Fallback Groq échoué : {e} — retour erreur")
+            return self._error(f"Analyse vidéo impossible : {e}")
 
     # [1] GEMINI 2.0 FLASH  — Upload + description vidéo entière
 
@@ -197,128 +190,88 @@ Sois précis et objectif. Réponds en {language}.
             "success"         : True,
         }
 
-    # [2] QWEN2-VL LOCAL
+    def _groq_vision_fallback(self, video_path: str, language: str) -> dict:
+        """Lightweight fallback: extract up to 2 frames, send as base64 to Groq Vision LLM.
 
-    def _qwen_describe(self, video_path: str, language: str) -> dict:
-        """Qwen2-VL sur frames clés extraites."""
-        from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-        from qwen_vl_utils import process_vision_info
-
-        model_name = "Qwen/Qwen2-VL-7B-Instruct"
-        logger.info(f"Chargement {model_name}...")
-
-        model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name, torch_dtype="auto", device_map="auto"
-        )
-        processor = AutoProcessor.from_pretrained(model_name)
-
-        lang_instr = {"fr": "en français", "ar": "بالعربية", "en": "in English"}.get(language, "en français")
-
-        messages = [{
-            "role": "user",
-            "content": [
-                {"type": "video", "video": video_path, "max_pixels": 360*420, "fps": 1.0},
-                {"type": "text", "text": f"Décris cette vidéo {lang_instr}, actions et comportements observés."},
-            ],
-        }]
-
-        text     = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        img_inp, vid_inp = process_vision_info(messages)
-        inputs   = processor(text=[text], images=img_inp, videos=vid_inp,
-                             padding=True, return_tensors="pt").to(model.device)
-        out_ids  = model.generate(**inputs, max_new_tokens=512)
-        trimmed  = [o[len(i):] for i, o in zip(inputs.input_ids, out_ids)]
-        result   = processor.batch_decode(trimmed, skip_special_tokens=True,
-                                          clean_up_tokenization_spaces=False)[0]
-
-        return {
-            "description"     : result.strip(),
-            "method_used"     : "qwen2-vl-7b",
-            "frames_analyzed" : -1,
-            "success"         : True,
-        }
-
-    # [3] BLIP-2 (fallback CPU)
-
-    def _blip2_describe(self, video_path: str, language: str) -> dict:
+        Uses `LLMClient` (Groq) if available; otherwise returns a simple
+        concatenation of frame placeholders.
         """
-        Extrait des frames avec OpenCV, décrit chacune avec BLIP-2,
-        puis fusionne en une description cohérente.
-        Fonctionne sans ffmpeg système.
-        """
-        if not CV2_OK:
-            return self._error("OpenCV requis : pip install opencv-python")
-
-        # ── Extraction frames ────────────────────────────────────────────────
-        frames, n_frames = self._extract_frames(video_path, max_frames=8)
+        frames, n_frames = self._extract_frames(video_path, max_frames=2)
         if not frames:
             return self._error("Impossible d'extraire les frames")
 
-        # ── BLIP-2 description ───────────────────────────────────────────────
-        descriptions = []
-
-        if BLIP2_OK:
-            descriptions = self._blip2_frames(frames)
-        else:
-            # Fallback sans BLIP-2 : description générique
-            descriptions = [
-                f"Frame {i+1}/{len(frames)} : scène vidéo"
-                for i in range(len(frames))
-            ]
-            logger.warning("BLIP-2 non disponible — descriptions génériques")
-
-        # ── Audio (optionnel — ne plante pas si ffmpeg absent) ───────────────
-        audio_text = self._extract_audio_safe(video_path)
-
-        # ── Fusion descriptions ──────────────────────────────────────────────
-        combined = self._fuse_descriptions(descriptions, audio_text, language)
-
-        logger.info(f"BLIP-2 ✔ — {len(frames)} frames analysées")
-        return {
-            "description"     : combined,
-            "method_used"     : "blip2+frames",
-            "frames_analyzed" : len(frames),
-            "success"         : bool(combined and combined != "Impossible d'analyser cette vidéo."),
-        }
-
-    def _blip2_frames(self, frames: list) -> list:
-        """Décrit chaque frame avec BLIP-2."""
-        import torch
-        from PIL import Image
-
-        if not self.blip2_model:
-            logger.info("Chargement BLIP-2...")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.blip2_proc  = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-            self.blip2_model = Blip2ForConditionalGeneration.from_pretrained(
-                "Salesforce/blip2-opt-2.7b",
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            ).to(device)
-
-        device       = next(self.blip2_model.parameters()).device
-        descriptions = []
-
-        for i, frame_bgr in enumerate(frames):
+        # Encode frames as JPEG base64
+        imgs_b64 = []
+        for frame in frames:
             try:
-                # BGR → RGB → PIL
-                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                pil_img   = Image.fromarray(frame_rgb)
+                # Ensure frames are small (see _extract_frames resizing)
+                # Compress aggressively to reduce token usage
+                _, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                b64 = base64.b64encode(buf.tobytes()).decode('ascii')
+                imgs_b64.append(b64)
+            except Exception:
+                imgs_b64.append("")
 
-                inputs = self.blip2_proc(
-                    images=pil_img,
-                    text="Describe what you see in detail:",
-                    return_tensors="pt",
-                ).to(device)
+        # Build a compact prompt for Groq
+        prompt_parts = [
+            f"You are a helpful assistant. Describe the scene, actions, objects and any observable behaviors in these images. Respond in {language}.",
+            "Provide a concise, objective summary (2-4 sentences) and list notable actions/objects.",
+        ]
+        for i, b in enumerate(imgs_b64):
+            prompt_parts.append(f"---IMAGE {i+1} (base64)---\n{b}")
 
-                out = self.blip2_model.generate(**inputs, max_new_tokens=80)
-                desc = self.blip2_proc.decode(out[0], skip_special_tokens=True).strip()
-                descriptions.append(f"[{i+1}] {desc}")
-                logger.info(f"  Frame {i+1}/{len(frames)} : {desc[:60]}...")
+        prompt = "\n\n".join(prompt_parts)
+
+        # Call Groq via LLMClient if available
+        if LLMCLIENT_OK:
+            try:
+                client = LLMClient()
+                # Preferred Groq vision model (as specified)
+                vision_models = [
+                    "meta-llama/llama-4-scout-17b-16e-instruct",
+                    "llama-3.2-11b-vision-preview",
+                ]
+                last_exc = None
+                # Build multimodal messages using image_url with data URI
+                messages_base = [
+                    {"role": "system", "content": f"You are a concise, objective assistant. Describe the scene, actions, objects and observable behaviors in the provided images. Respond in {language}."}
+                ]
+                img_messages = []
+                for b64 in imgs_b64:
+                    img_messages.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                    })
+                user_content = img_messages + [{"type": "text", "text": "Provide a concise 2-4 sentence summary and list notable actions/objects."}]
+                messages = messages_base + [{"role": "user", "content": user_content}]
+
+                for vm in vision_models:
+                    try:
+                        client.model = vm
+                        desc = client.generate_from_messages(messages, max_tokens=512)
+                        return {
+                            "description": desc.strip(),
+                            "method_used": f"groq-vision-fallback:{vm}",
+                            "frames_analyzed": len(frames),
+                            "success": True,
+                        }
+                    except Exception as e:
+                        last_exc = e
+                        logger.warning(f"Groq model {vm} failed: {e}")
+                if last_exc:
+                    raise last_exc
             except Exception as e:
-                logger.warning(f"  Frame {i+1} échouée : {e}")
-                descriptions.append(f"[{i+1}] frame non analysée")
+                logger.warning(f"Groq fallback failed: {e}")
 
-        return descriptions
+        # Final fallback: simple concatenation of placeholder descriptions
+        descriptions = [f"Frame {i+1}/{len(frames)} : scène vidéo" for i in range(len(frames))]
+        combined = self._fuse_descriptions(descriptions, "", language)
+        return {
+            "description": combined,
+            "method_used": "local-placeholder-fallback",
+            "frames_analyzed": len(frames),
+            "success": bool(combined and combined != "Impossible d'analyser cette vidéo."),
+        }
 
     def _fuse_descriptions(self, descriptions: list,
                             audio_text: str, language: str) -> str:
@@ -387,9 +340,9 @@ Sois précis et objectif. Réponds en {language}.
             if ret and frame is not None:
                 # Redimensionner si trop grande
                 h, w = frame.shape[:2]
-                if w > 640:
-                    scale = 640 / w
-                    frame = cv2.resize(frame, (640, int(h * scale)))
+                if w > 320:
+                    scale = 320 / w
+                    frame = cv2.resize(frame, (320, int(h * scale)))
                 frames.append(frame)
 
         cap.release()
