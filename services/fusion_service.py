@@ -5,7 +5,7 @@ W_ML = 0.556
 W_CNN = 0.444
 
 def logit(p):
-    p = np.clip(p, 1e-8, 1 - 1e-8)
+    p = np.clip(p, 0.01, 0.99)
     return np.log(p / (1 - p))
 
 def sigmoid(x):
@@ -18,3 +18,13 @@ def fusion_prediction(prob_ml, prob_cnn):
     )
     final_prob = sigmoid(logit_fusion)
     return float(final_prob)
+
+def _main():
+
+
+    result = fusion_prediction(0.99, 0.77)
+    print(result)
+
+
+if __name__ == "__main__":
+    _main()
