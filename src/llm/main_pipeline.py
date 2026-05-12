@@ -334,14 +334,14 @@ class MainPipeline:
             elif media_type == "video":
                 r = self.video_handler.process(media_path)
                 return r.get("translated_text", ""), r.get("translated_text", "")
-            elif media_type == "audio":
-                # SpeechHandler removed: skip audio processing if not available
-                if self.speech_handler:
-                    r = self.speech_handler.process(media_path)
-                    return r.get("translated_text", ""), ""
-                else:
-                    logger.info("Audio processing disabled (SpeechHandler supprimé)")
-                    return "", ""
+            # elif media_type == "audio":
+            #     # SpeechHandler removed: skip audio processing if not available
+            #     if self.speech_handler:
+            #         r = self.speech_handler.process(media_path)
+            #         return r.get("translated_text", ""), ""
+            #     else:
+            #         logger.info("Audio processing disabled (SpeechHandler supprimé)")
+            #         return "", ""
         except Exception as e:
             logger.warning(f"Erreur traitement média : {e}")
         return "", ""

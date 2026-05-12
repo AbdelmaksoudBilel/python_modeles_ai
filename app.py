@@ -77,6 +77,7 @@ from services.rm_service     import RMService
 
 # ── Import NLP Dashboard ───────────────────────────────────────────────────
 from src.api.nlp_dashboard import router as nlp_router
+import requests  # Import important pour récupérer les fichiers Cloudinary
 
 
 PR_QN1_A_INDEX = 10
@@ -169,37 +170,140 @@ def root():
 
 # ── Prédiction TSA + RM → profil final ───────────────────────────────────────
 
+# @app.post("/predict", response_model=PredictResponse)
+# async def predict(
+#     features_tsa: str        = Form(...),   # JSON list — questionnaire TSA
+#     features_rm : str        = Form(...),   # JSON list — questionnaire RM
+#     image       : UploadFile = File(...),   # photo de l'enfant
+#     image_url   : Optional[str] = Form(None)  # Nouveau : accepte l'URL directement
+# ):
+#     """
+#     Endpoint de prédiction combinée TSA + RM.
+
+#     Logique de fusion :
+#         TSA  oui + RM non  → "TSA"
+#         TSA  non + RM oui  → "RM"
+#         TSA  oui + RM oui  → "MIXTE"
+#         TSA  non + RM non  → "Normal"
+
+#     Seuils :
+#         TSA détecté  : prob_tsa >= 0.5
+#         RM détecté   : score_anomalie <= 0.3 (profil RM typique)
+#     """
+#     # ── Parser les features ───────────────────────────────────────────────
+#     try:
+#         feats_tsa = json.loads(features_tsa)
+#         feats_rm  = json.loads(features_rm)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"JSON invalide : {e}")
+
+#     # ── Étape 1 : Prédiction TSA ─────────────────────────────────────────────
+#     prob_ml  = predict_ml(feats_tsa)
+ 
+#     img_bytes = await image.read()
+#     pil_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+#     prob_cnn  = predict_cnn(pil_image)
+ 
+#     prob_tsa     = fusion_prediction(prob_ml, prob_cnn)
+#     tsa_detected = prob_tsa >= 0.5
+ 
+#     logger.info(
+#         f"TSA : prob_ml={prob_ml:.3f} | prob_cnn={prob_cnn:.3f} | "
+#         f"prob_tsa={prob_tsa:.3f} | tsa_detected={tsa_detected}"
+#     )
+ 
+#     # ── Étape 2 : INJECTION AUTOMATIQUE DE PR_QN1_A ─────────────────────────
+#     # La valeur est basée sur le résultat TSA détecté :
+#     #   tsa_detected=True  → PR_QN1_A = 2 (Oui, diagnostiqué)
+#     #   tsa_detected=False → PR_QN1_A = 1 (Non, non diagnostiqué)
+#     # Cela signifie que le modèle RM reçoit une information cohérente
+#     # avec le résultat TSA — pas ce que le parent a saisi (qui était 1 par défaut)
+ 
+#     pr_qn1a_value = 2 if tsa_detected else 1
+ 
+#     if len(feats_rm) > PR_QN1_A_INDEX:
+#         feats_rm[PR_QN1_A_INDEX] = pr_qn1a_value
+#         logger.info(f"PR_QN1_A injecté : {pr_qn1a_value} (tsa_detected={tsa_detected})")
+#     else:
+#         logger.warning(
+#             f"features_rm trop court ({len(feats_rm)} éléments) — "
+#             f"PR_QN1_A à l'index {PR_QN1_A_INDEX} non trouvé"
+#         )
+
+#     # ── Prédiction RM ─────────────────────────────────────────────────────
+#     rm_result      = rm_service.predict(feats_rm)
+#     score_anomalie = rm_result["score_anomalie"]
+#     rm_detected    = not rm_result["is_anomaly"]
+
+#     # ── Fusion TSA + RM → prédiction finale ──────────────────────────────
+#     if tsa_detected and rm_detected:
+#         prediction = "MIXTE"
+#         confidence = round((prob_tsa + (1 - score_anomalie)) / 2, 4)
+#     elif tsa_detected:
+#         prediction = "TSA"
+#         confidence = round(prob_tsa, 4)
+#     elif rm_detected:
+#         prediction = "RM"
+#         confidence = round(1 - score_anomalie, 4)
+#     else:
+#         prediction = "Normal"
+#         confidence = round(1 - prob_tsa, 4)
+
+#     logger.info(
+#         f"Prédiction : {prediction} | "
+#         f"TSA={prob_tsa:.2f} | RM score={score_anomalie:.2f} | "
+#         f"confidence={confidence}"
+#     )
+
+#     return PredictResponse(
+#         prob_ml        = round(prob_ml, 4),
+#         prob_cnn       = round(prob_cnn, 4),
+#         prob_tsa       = round(prob_tsa, 4),
+#         tsa_detected   = tsa_detected,
+#         score_anomalie = round(score_anomalie, 4),
+#         rm_detected    = rm_detected,
+#         prediction     = prediction,
+#         confidence     = confidence,
+#     )
+
 @app.post("/predict", response_model=PredictResponse)
 async def predict(
-    features_tsa: str        = Form(...),   # JSON list — questionnaire TSA
-    features_rm : str        = Form(...),   # JSON list — questionnaire RM
-    image       : UploadFile = File(...),   # photo de l'enfant
+    features_tsa: str           = Form(...),
+    features_rm : str           = Form(...),
+    image       : Optional[UploadFile] = File(None), # Optionnel si image_url est présent
+    image_url   : Optional[str] = Form(None)     # Nouveau : URL Cloudinary
 ):
-    """
-    Endpoint de prédiction combinée TSA + RM.
-
-    Logique de fusion :
-        TSA  oui + RM non  → "TSA"
-        TSA  non + RM oui  → "RM"
-        TSA  oui + RM oui  → "MIXTE"
-        TSA  non + RM non  → "Normal"
-
-    Seuils :
-        TSA détecté  : prob_tsa >= 0.5
-        RM détecté   : score_anomalie <= 0.3 (profil RM typique)
-    """
-    # ── Parser les features ───────────────────────────────────────────────
+    # 1. Parser les features
     try:
         feats_tsa = json.loads(features_tsa)
         feats_rm  = json.loads(features_rm)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"JSON invalide : {e}")
 
+    # 2. Récupération de l'image (soit URL, soit File)
+    pil_image = None
+    
+    try:
+        if image_url:
+            # Récupération via URL Cloudinary
+            resp = requests.get(image_url, timeout=10)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=400, detail="Impossible de télécharger l'image depuis l'URL")
+            pil_image = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            
+        elif image:
+            # Récupération via Upload standard
+            img_bytes = await image.read()
+            pil_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        else:
+            raise HTTPException(status_code=400, detail="Veuillez fournir une image ou une URL d'image")
+
+    except Exception as e:
+        logger.error(f"Erreur traitement image : {e}")
+        raise HTTPException(status_code=400, detail="Format d'image invalide ou corrompu")
+
     # ── Étape 1 : Prédiction TSA ─────────────────────────────────────────────
     prob_ml  = predict_ml(feats_tsa)
- 
-    img_bytes = await image.read()
-    pil_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     prob_cnn  = predict_cnn(pil_image)
  
     prob_tsa     = fusion_prediction(prob_ml, prob_cnn)
@@ -211,22 +315,13 @@ async def predict(
     )
  
     # ── Étape 2 : INJECTION AUTOMATIQUE DE PR_QN1_A ─────────────────────────
-    # La valeur est basée sur le résultat TSA détecté :
-    #   tsa_detected=True  → PR_QN1_A = 2 (Oui, diagnostiqué)
-    #   tsa_detected=False → PR_QN1_A = 0 (Non)
-    # Cela signifie que le modèle RM reçoit une information cohérente
-    # avec le résultat TSA — pas ce que le parent a saisi (qui était 0 par défaut)
- 
-    pr_qn1a_value = 2 if tsa_detected else 0
+    pr_qn1a_value = 2 if tsa_detected else 1
  
     if len(feats_rm) > PR_QN1_A_INDEX:
         feats_rm[PR_QN1_A_INDEX] = pr_qn1a_value
-        logger.info(f"PR_QN1_A injecté : {pr_qn1a_value} (tsa_detected={tsa_detected})")
+        logger.info(f"PR_QN1_A injecté : {pr_qn1a_value}")
     else:
-        logger.warning(
-            f"features_rm trop court ({len(feats_rm)} éléments) — "
-            f"PR_QN1_A à l'index {PR_QN1_A_INDEX} non trouvé"
-        )
+        logger.warning(f"Index PR_QN1_A non trouvé")
 
     # ── Prédiction RM ─────────────────────────────────────────────────────
     rm_result      = rm_service.predict(feats_rm)
@@ -247,12 +342,6 @@ async def predict(
         prediction = "Normal"
         confidence = round(1 - prob_tsa, 4)
 
-    logger.info(
-        f"Prédiction : {prediction} | "
-        f"TSA={prob_tsa:.2f} | RM score={score_anomalie:.2f} | "
-        f"confidence={confidence}"
-    )
-
     return PredictResponse(
         prob_ml        = round(prob_ml, 4),
         prob_cnn       = round(prob_cnn, 4),
@@ -263,7 +352,6 @@ async def predict(
         prediction     = prediction,
         confidence     = confidence,
     )
-
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
@@ -310,41 +398,28 @@ async def chat(request: ChatRequest):
 
 # ── Chat avec média ───────────────────────────────────────────────────────────
 
+
 @app.post("/chat/media", response_model=ChatResponse)
 async def chat_media(
-    profile     : str                    = Form(...),
-    conversation: str                    = Form("{}"),
-    child       : str                    = Form("{}"),
-    question    : Optional[str]          = Form(None),    # texte (si pas audio)
-    media       : Optional[UploadFile]   = File(None),   # image ou vidéo
-    audio       : Optional[UploadFile]   = File(None),   # message vocal
+    profile     : str = Form(...),
+    conversation: str = Form("{}"),
+    child       : str = Form("{}"),
+    question    : Optional[str] = Form(None),
+    media       : Optional[UploadFile] = File(None),
+    audio       : Optional[UploadFile] = File(None),
+    media_url   : Optional[str] = Form(None)  # Nouveau : accepte l'URL directement
 ):
-    """
-    Endpoint avec média.
-
-    Deux modes :
-        Mode 1 — Audio seul :
-            audio = fichier mp3/wav/ogg
-            → transcription Whisper → devient la question
-
-        Mode 2 — Texte + (image ou vidéo optionnel) :
-            question = texte du parent
-            media    = image (jpg/png) ou vidéo (mp4/avi)
-            → description BLIP/vidéo ajoutée au contexte
-
-    Règle : audio OU (question + media optionnel) — pas les deux.
-    """
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Pipeline non initialisé")
 
-    # Valider : il faut au moins audio ou question
-    if not audio and not question:
+    # 1. Validation de l'entrée
+    if not audio and not question and not media_url:
         raise HTTPException(
             status_code=400,
-            detail="Fournir 'audio' (message vocal) ou 'question' (texte)."
+            detail="Fournir 'audio', 'question' ou une 'media_url'."
         )
 
-    import json
+    # 2. Parsing JSON sécurisé
     try:
         profile_dict      = json.loads(profile)
         conversation_dict = json.loads(conversation)
@@ -352,69 +427,165 @@ async def chat_media(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"JSON invalide : {e}")
 
-    tmp_audio = None
-    tmp_media = None
+    tmp_path = None
+    m_type = ""
 
     try:
-        # ── Mode 1 : Audio → question ─────────────────────────────────────
+        # ── CAS 1 : Audio (Message vocal) ──────────────────────────────────
         if audio:
-            ext_audio = os.path.splitext(audio.filename or "")[1].lower() or ".ogg"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext_audio) as f:
+            ext = os.path.splitext(audio.filename or "")[1].lower() or ".ogg"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
                 shutil.copyfileobj(audio.file, f)
-                tmp_audio = f.name
+                tmp_path = f.name
+            m_type = "audio"
 
-            result = pipeline.run(
-                question     = "",           # sera extrait de l'audio
-                profile      = profile_dict,
-                conversation = conversation_dict,
-                child        = child_dict,
-                media_path   = tmp_audio,
-                media_type   = "audio",
-            )
+        # ── CAS 2 : Media via URL (Cloudinary) ─────────────────────────────
+        elif media_url:
+            # On extrait l'extension depuis l'URL
+            ext = os.path.splitext(media_url.split('?')[0])[1].lower() or ".jpg"
+            m_type = _detect_media_type(ext)
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
+                resp = requests.get(media_url, timeout=10)
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=400, detail="Impossible de télécharger le média depuis Cloudinary")
+                f.write(resp.content)
+                tmp_path = f.name
 
-        # ── Mode 2 : Texte + (image/vidéo optionnel) ─────────────────────
-        else:
-            media_path = ""
-            media_type = ""
+        # ── CAS 3 : Media via Upload standard ──────────────────────────────
+        elif media:
+            ext = os.path.splitext(media.filename or "")[1].lower()
+            m_type = _detect_media_type(ext)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
+                shutil.copyfileobj(media.file, f)
+                tmp_path = f.name
 
-            if media and media.filename:
-                ext = os.path.splitext(media.filename)[1].lower()
-                media_type = _detect_media_type(ext)
-
-                if not media_type or media_type == "audio":
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Format non supporté pour 'media' : {ext}. "
-                               f"Utiliser 'audio' pour les fichiers audio."
-                    )
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
-                    shutil.copyfileobj(media.file, f)
-                    tmp_media = f.name
-                media_path = tmp_media
-
-            result = pipeline.run(
-                question     = question,
-                profile      = profile_dict,
-                conversation = conversation_dict,
-                child        = child_dict,
-                media_path   = media_path,
-                media_type   = media_type,
-            )
+        # 3. Exécution du Pipeline
+        # On unifie l'appel : l'audio est traité comme un media_type "audio"
+        result = pipeline.run(
+            question     = question or "",
+            profile      = profile_dict,
+            conversation = conversation_dict,
+            child        = child_dict,
+            media_path   = tmp_path,
+            media_type   = m_type
+        )
 
         return ChatResponse(**result)
 
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Erreur /chat/media : {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        for tmp in [tmp_audio, tmp_media]:
-            if tmp and os.path.exists(tmp):
-                os.remove(tmp)
-                logger.info(f"Fichier temporaire supprimé : {tmp}")
+        # Nettoyage automatique du fichier temporaire
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+            logger.info(f"Nettoyage : {tmp_path} supprimé")
+# async def chat_media(
+#     profile     : str                    = Form(...),
+#     conversation: str                    = Form("{}"),
+#     child       : str                    = Form("{}"),
+#     question    : Optional[str]          = Form(None),    # texte (si pas audio)
+#     media       : Optional[UploadFile]   = File(None),   # image ou vidéo
+#     audio       : Optional[UploadFile]   = File(None),   # message vocal
+# ):
+#     """
+#     Endpoint avec média.
+
+#     Deux modes :
+#         Mode 1 — Audio seul :
+#             audio = fichier mp3/wav/ogg
+#             → transcription Whisper → devient la question
+
+#         Mode 2 — Texte + (image ou vidéo optionnel) :
+#             question = texte du parent
+#             media    = image (jpg/png) ou vidéo (mp4/avi)
+#             → description BLIP/vidéo ajoutée au contexte
+
+#     Règle : audio OU (question + media optionnel) — pas les deux.
+#     """
+#     if pipeline is None:
+#         raise HTTPException(status_code=503, detail="Pipeline non initialisé")
+
+#     # Valider : il faut au moins audio ou question
+#     if not audio and not question:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="Fournir 'audio' (message vocal) ou 'question' (texte)."
+#         )
+
+#     import json
+#     try:
+#         profile_dict      = json.loads(profile)
+#         conversation_dict = json.loads(conversation)
+#         child_dict        = json.loads(child)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"JSON invalide : {e}")
+
+#     tmp_audio = None
+#     tmp_media = None
+
+#     try:
+#         # ── Mode 1 : Audio → question ─────────────────────────────────────
+#         if audio:
+#             ext_audio = os.path.splitext(audio.filename or "")[1].lower() or ".ogg"
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=ext_audio) as f:
+#                 shutil.copyfileobj(audio.file, f)
+#                 tmp_audio = f.name
+
+#             result = pipeline.run(
+#                 question     = "",           # sera extrait de l'audio
+#                 profile      = profile_dict,
+#                 conversation = conversation_dict,
+#                 child        = child_dict,
+#                 media_path   = tmp_audio,
+#                 media_type   = "audio",
+#             )
+
+#         # ── Mode 2 : Texte + (image/vidéo optionnel) ─────────────────────
+#         else:
+#             media_path = ""
+#             media_type = ""
+
+#             if media and media.filename:
+#                 ext = os.path.splitext(media.filename)[1].lower()
+#                 media_type = _detect_media_type(ext)
+
+#                 if not media_type or media_type == "audio":
+#                     raise HTTPException(
+#                         status_code=400,
+#                         detail=f"Format non supporté pour 'media' : {ext}. "
+#                                f"Utiliser 'audio' pour les fichiers audio."
+#                     )
+
+#                 with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
+#                     shutil.copyfileobj(media.file, f)
+#                     tmp_media = f.name
+#                 media_path = tmp_media
+
+#             result = pipeline.run(
+#                 question     = question,
+#                 profile      = profile_dict,
+#                 conversation = conversation_dict,
+#                 child        = child_dict,
+#                 media_path   = media_path,
+#                 media_type   = media_type,
+#             )
+
+#         return ChatResponse(**result)
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Erreur /chat/media : {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
+
+#     finally:
+#         for tmp in [tmp_audio, tmp_media]:
+#             if tmp and os.path.exists(tmp):
+#                 os.remove(tmp)
+#                 logger.info(f"Fichier temporaire supprimé : {tmp}")
 
 
 # UTILITAIRES
