@@ -188,11 +188,11 @@ class ChunkFilter:
         """
         result = self.chunks
 
-        if trouble and trouble != "all":
+        if trouble and trouble != "MIXTE":
             trouble_up = trouble.upper()
             result = [
                 c for c in result
-                if (c.get("trouble") or "").upper() in (trouble_up, "MIXTE", "ALL")
+                if (c.get("trouble") or "").upper() in (trouble_up, "")
             ]
 
         if age_group and age_group != "all":
@@ -393,7 +393,7 @@ class ChunkFilter:
             )
             web_triggered = True
             try:
-                from web_search import WebSearch
+                from .web_search import WebSearch
                 ws = WebSearch()
                 web_results = ws.search(question, trouble)
             except Exception as e:
